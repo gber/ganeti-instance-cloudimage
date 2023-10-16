@@ -1,0 +1,24 @@
+#
+# unprivileged user account used to fetch images
+#
+UNPRIV_USER="ganeti-instance-cloudimage"
+
+#
+# cache location where images are stored
+#
+CACHE_PATH="/var/cache/ganeti-instance-cloudimage"
+
+#
+# Set the proxy to use for the HTTP protocol
+#
+HTTP_PROXY=
+
+#
+# Set the proxy to use for the HTTPS protocol
+#
+HTTPS_PROXY=
+
+#
+# List of host names which should not be proxied
+#
+NO_PROXY=

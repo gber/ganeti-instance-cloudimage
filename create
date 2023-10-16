@@ -1,0 +1,149 @@
+#!/bin/bash
+#
+# Copyright (C) 2023 Guido Berhoerster <guido+freiesoftware@berhoerster.name>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
+[[ -n ${OS_VARIANT} ]] || exit 1
+[[ -n ${INSTANCE_NAME} ]] || exit 1
+[[ -n ${DISK_0_PATH} ]] || exit 1
+export OS_VARIANT DEBUG_LEVEL
+
+source "$(dirname "$0")/common.sh"
+
+mkdir -p "${CACHE_PATH}" || exit $?
+chgrp "${UNPRIV_GROUP}" "${CACHE_PATH}" || exit $?
+chmod 770 "${CACHE_PATH}" || exit $?
+
+#
+# download distro image
+#
+distro_script="$(dirname "$0")/variant-${OS_VARIANT}"
+if [[ ! -x ${distro_script} ]]; then
+    distro_script="$(dirname "$0")/variant-${OS_VARIANT%-*}"
+fi
+[[ -x ${distro_script} ]] || exit 1
+export DOWNLOAD_PATH="$(mktemp -d -p "${CACHE_PATH}")"
+atexit "rm -rf ${DOWNLOAD_PATH@Q}"
+chgrp "${UNPRIV_GROUP}" "${DOWNLOAD_PATH}" || exit $?
+chmod 770 "${DOWNLOAD_PATH}" || exit $?
+image="$(runuser -u "${UNPRIV_USER}" -- "${distro_script}")" || exit $?
+
+#
+# setup loopback device if necessary
+#
+disk_path="${DISK_0_PATH}"
+if [[ -f ${DISK_0_PATH} ]]; then
+    disk_path="$(losetup -f --show "${DISK_0_PATH}")" || exit $?
+    atexit "losetup -d ${disk_path@Q}"
+fi
+
+#
+# write image to disk
+#
+case ${image#*.} in
+qcow2)
+    qemu-img convert -q -f qcow2 -O host_device "${image}" "${disk_path}" || exit $?
+    ;;
+xz)
+    xz -q -d -c "${image}" >"${disk_path}" || exit $?
+    ;;
+raw|img)
+    dd if="${image}" of="${disk_path}" bs=1M status=none || exit $?
+    ;;
+*)
+    exit 1
+    ;;
+esac
+partx -u "${disk_path}" || exit $?
+
+#
+# mount partition containing /var
+#
+declare -A partitions
+for part in "${disk_path}"?*; do
+    [[ -b ${part} ]] || continue
+
+    case $(blkid -p -s PART_ENTRY_TYPE -o value "${part}") in
+    # /var
+    4d21b016-b534-45c2-a9fb-5c16e091fd2d)
+        partitions["var"]="${part}"
+        ;;
+    # ARM, PPC, x86, RISC-V (32/64 bit) root partitions
+    69dad710-2ce4-4e3c-b16c-21a1d49abed3|\
+    b921b045-1df0-41c3-af44-4c6f280d3fae|\
+    1de3f1ef-fa98-47b5-8dcd-4a860a654d78|\
+    912ade1d-a839-4913-8964-a10eee08fbd2|\
+    c31c45e6-3f39-412e-80fb-4809c4980599|\
+    44479540-f297-41b2-9af7-d131d5f0458a|\
+    4f68bce3-e8cd-4db1-96e7-fbcaf984b709|\
+    60d5a7fe-8e7d-435c-b714-3dd8162144e1|\
+    72ec70a6-cf74-40e6-bd49-4bda08e8f224)
+        partitions["root"]="${part}"
+        ;;
+    # generic data partition
+    0fc63daf-8483-4772-8e79-3d69d8477de4)
+        if [[ -z ${partitions["generic"]} ]]; then
+            partitions["generic"]="${part}"
+        fi
+        ;;
+    esac
+done
+
+statedir="/var"
+partition=
+for p in var root generic; do
+    if [[ -n ${partitions[${p}]} ]]; then
+        partition="${partitions[${p}]}"
+        [[ ${p} = "var" ]] && statedir="/"
+        break
+    fi
+done
+[[ -n ${partition} ]] || exit 1
+
+mount_path="$(mktemp -d)" || exit $?
+atexit "rm -rf ${mount_path@Q}"
+nocloud_seed_path="${mount_path}/${statedir}/lib/cloud/seed/nocloud"
+mount -o rw,nosuid,nodev,noexec "${partition}" "${mount_path}" || \
+    exit 1
+atexit "umount ${mount_path@Q}"
+[[ -d ${mount_path}/${statedir} ]] || exit 1
+
+#
+# preseed cloud-init
+#
+mkdir -p "${nocloud_seed_path}"
+cat >"${nocloud_seed_path}/meta-data" <<EOF
+instance-id: $(uuidgen -r)
+local-hostname: ${INSTANCE_NAME}
+EOF
+
+cat >"${nocloud_seed_path}/user-data" <<EOF
+#cloud-config
+manage_etc_hosts: true
+EOF
+
+readarray -t -d ';' keys < <(printf '%s' "${OSP_SSH_AUTHORIZED_KEYS}")
+if [[ ${#keys[@]} -gt 0 ]]; then
+    cat >>"${nocloud_seed_path}/user-data" <<EOF
+ssh_authorized_keys:
+EOF
+    for key in "${keys[@]}"; do
+        key="${key#"${key%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        printf '  - %s\n' "${key}" >>"${nocloud_seed_path}/user-data"
+    done
+fi

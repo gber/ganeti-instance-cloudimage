@@ -1,0 +1,1 @@
+ssh_authorized_keys Comma-separated list of SSH public keys to add to the default user's authorized keys

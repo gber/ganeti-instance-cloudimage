@@ -1,0 +1,75 @@
+#!/bin/bash
+#
+# Copyright (C) 2023 Guido Berhoerster <guido+freiesoftware@berhoerster.name>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
+umask 007
+
+if [[ ${DEBUG_LEVEL} -gt 0 ]]; then
+    set -x
+else
+    nodebug=1
+fi
+
+: ${CACHE_PATH:?missing CACHE_PATH}
+: ${DOWNLOAD_PATH:?missing DOWNLOAD_PATH}
+
+case ${OS_VARIANT} in
+debian-bookworm)
+    case $(uname -m) in
+    x86_64)
+        image='https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2'
+        ;;
+    aarch64*|armv8*)
+        image='https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2'
+        ;;
+    *)
+        exit 1
+        ;;
+    esac
+    image_checksum='https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS'
+    ;;
+*)
+    exit 1
+esac
+
+downloaded_file="${DOWNLOAD_PATH}/${image##*/}"
+cached_file="${CACHE_PATH}/${image##*/}"
+[[ -f ${cached_file} ]] && is_cached=1
+curl ${nodebug:+--silent} \
+    --location \
+    --output "${downloaded_file}" \
+    ${is_cached:+--time-cond} ${is_cached:+"${cached_file}"} \
+    --remote-time \
+    "${image}" || \
+    exit $?
+if [[ -f ${downloaded_file} ]]; then
+    curl ${nodebug:+--silent} \
+        --location \
+        --output "${DOWNLOAD_PATH}/${image_checksum##*/}" \
+        "${image_checksum}" || \
+        exit $?
+    (
+        cd "${DOWNLOAD_PATH}" && \
+            sha512sum --check --status --ignore-missing \
+            "${DOWNLOAD_PATH}/${image_checksum##*/}"
+    ) || exit $?
+    mv "${downloaded_file}" "${cached_file}" || \
+        exit $?
+fi
+
+printf '%s\n' "${cached_file}"
