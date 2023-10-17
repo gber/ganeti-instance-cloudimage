@@ -1,0 +1,61 @@
+#!/bin/bash
+#
+# Copyright (C) 2023 Guido Berhoerster <guido+freiesoftware@berhoerster.name>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
+set -x
+
+if [[ $(id -u) -ne 0 ]]; then
+    printf "error: must be run as root\n" >&2
+    exit 1
+fi
+
+TMPDIR="${TMPDIR:-/var/tmp}"
+
+case $1 in
+create)
+    CACHE_PATH="${TMPDIR}/ganeti-instance-cloudimage-test/test/cache"
+    DISK_0_PATH="${TMPDIR}/ganeti-instance-cloudimage-test/disk0.raw"
+    mkdir -p "${CACHE_PATH}" || exit 1
+    truncate -s 10G "${DISK_0_PATH}" || exit 1
+
+    env -i \
+        PWD="${PWD}" \
+        HOME="${HOME}" \
+        TERM="${TERM}" \
+        UNPRIV_USER="${UNPRIV_USER:-nobody}" \
+        HTTP_PROXY="${HTTP_PROXY}" \
+        HTTPS_PROXY="${HTTPS_PROXY}" \
+        NO_PROXY="${NO_PROXY}" \
+        DEBUG_LEVEL=1 \
+        OS_VARIANT="debian-bookworm" \
+        DISK_0_PATH="${DISK_0_PATH}" \
+        INSTANCE_NAME="bookworm" \
+        OSP_SSH_AUTHORIZED_KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMnfM6zsDbPW22exgytE2ESqw3+9EOHOfD2tgm3pX68y gber@wopr;ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDn2moKR4u3yJW+/hvwmhUDjiLBxiMPB+46YO9iEo8HXsdulpMi20hi2TTmWA0w3hog1IEnre6C7UGHcZG0HfPg+eROIuuXRcOfg3WP/IBV0KMF4DTa1KDoN/Nw7HMlhWxGxFrdbumAoj/s2ZaA/of1fpaPKOhunF8S9Ch60LYmgnR3tzJW/b0jS9fww8o/rMB3pZy2WSW0uUfpOIbDv+XHhNiC/iu8IgD+M5KkK+qbNZFPoTQkebc0RPRBcOrmEYroofFGg+7jPU++AEKJUKSaGjZRWzACuXiUzTo2F9fT09EMWU4oiYV9zRqjx6ctncwfEB4qOfoRUycfxBSJk7t7 Mike Gabriel' \
+        "$(dirname "$0")/create"
+    status=$?
+    if [[ ${status} -ne 0 ]]; then
+        printf 'FAIL\n' >&2
+        exit ${status}
+    fi
+    printf 'OK created %s\n' "${DISK_0_PATH}" >&2
+    exit 0
+    ;;
+*)
+    printf 'usage %s create\n' "$0" >&2
+    exit 2
+esac

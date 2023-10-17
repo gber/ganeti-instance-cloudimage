@@ -44,6 +44,7 @@ SCRIPT_FILES =	create \
 		export \
 		import \
 		rename \
+		test \
 		verify
 DATA_FILES =	default \
 		ganeti_api_version \
