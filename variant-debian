@@ -28,20 +28,37 @@ fi
 : ${CACHE_PATH:?missing CACHE_PATH}
 : ${DOWNLOAD_PATH:?missing DOWNLOAD_PATH}
 
+case $(uname -m) in
+x86_64)
+    arch=amd64
+    ;;
+aarch64*|armv8*)
+    arch=arm64
+    ;;
+ppc64*)
+    arch=ppc64el
+    ;;
+*)
+    exit 1
+    ;;
+esac
+
 case ${OS_VARIANT} in
+debian-bullseye)
+    image="https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-genericcloud-${arch}.qcow2"
+    image_checksum='https://cloud.debian.org/images/cloud/bullseye/latest/SHA512SUMS'
+    ;;
 debian-bookworm)
-    case $(uname -m) in
-    x86_64)
-        image='https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2'
-        ;;
-    aarch64*|armv8*)
-        image='https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2'
-        ;;
-    *)
-        exit 1
-        ;;
-    esac
+    image="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-${arch}.qcow2"
     image_checksum='https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS'
+    ;;
+debian-trixie)
+    image="https://cloud.debian.org/images/cloud/trixie/daily/latest/debian-13-genericcloud-${arch}-daily.qcow2"
+    image_checksum='https://cloud.debian.org/images/cloud/trixie/daily/latest/SHA512SUMS'
+    ;;
+debian-sid)
+    image="https://cloud.debian.org/images/cloud/sid/daily/latest/debian-sid-genericcloud-${arch}-daily.qcow2"
+    image_checksum='https://cloud.debian.org/images/cloud/sid/daily/latest/SHA512SUMS'
     ;;
 *)
     exit 1
