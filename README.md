@@ -45,6 +45,10 @@ contrast to `prefix`, the path specified via the `DESTDIR` macro will only be
 prepended to paths during installation and not be used for constructing
 internal paths.
 
+ganeti-instance-cloudimage requires an unprivileged user account which is used
+for downloading images and needs to be specified in the configuration file
+which is installed to "/etc/default/ganeti-instance-cloudimage" by default.
+
 The following instructions assume that `make` is GNU make, on some platforms
 it may be installed under a different name or a non-default path.  In order to
 start the build process run `make all`.  After a successful build, run `make
